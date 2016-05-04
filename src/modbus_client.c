@@ -1,7 +1,8 @@
 /*Modified modbus client sample from libmodbus.org*/
 /*added error checking to basic sample with messaging
 * changed context variable to ctx 
-* port number is 502 (default) and user must be SU to access that part of memory
+* port number is 502 (default) and loop-back address
+* user must be SU to access that part of memory
 */
 
 #include <stdio.h>
@@ -30,11 +31,12 @@ int main(void) {
 	}
 
 	else {
+q
 		printf("Connected to server\n");
 	}
 
-/* Read 5 registers from the address 0 */
-	modbus_read_registers(ctx, 0, 5, tab_reg);
+/* Read 2 registers from the address 44 and 45 */
+	modbus_read_registers(ctx, 44, 2, tab_reg);
 
 	printf("Register value:%04x\n", tab_reg[0]);
 
