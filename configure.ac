@@ -1,4 +1,4 @@
-AC_INIT([example_app], [0.1])
+AC_INIT([modbus_client], [0.1])
 
 AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])

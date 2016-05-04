@@ -1,5 +1,5 @@
-bin_PROGRAMS = example_app
+bin_PROGRAMS = modbus_client
 
-example_app_SOURCES = example_app.c
-example_app_CFLAGS = $(AM_CFLAGS) $(MODBUS_CFLAGS)
-example_app_LDADD = $(AM_LIBS) $(MODBUS_LIBS)
+modbus_client_SOURCES = modbus_client.c
+modbus_client_CFLAGS = $(AM_CFLAGS) $(MODBUS_CFLAGS)
+modbus_client_LDADD = $(AM_LIBS) $(MODBUS_LIBS)
