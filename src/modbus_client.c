@@ -5,12 +5,13 @@
 */
 
 #include <stdio.h>
-#include <modbus_tcp.h>
+#include <modbus-tcp.h>
+#include <errno.h>
 
 int main(void) {
 
 	modbus_t *ctx;
-	uint16_t tab_reg[32]
+	uint16_t tab_reg[32];
 
 	ctx = modbus_new_tcp("127.0.0.1", 502);  //port requires admin privileges
 	//error checking
