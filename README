@@ -1,6 +1,6 @@
 This is the modified EES4100_Example_Code from Kim's repo
 It was altered for running a modbus client program
 The program is called modbus_client
-This is week7 classwork preparatory to beginning the bridge project 
+Client/Server Link List preparatory to beginning the bridge project 
 
-Additional changes to provide usable address and modbus register numbers added 4/5
+Additional changes to provide usable remote server IP address and modbus register numbers (2) at 44 & 45

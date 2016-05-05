@@ -1,7 +1,7 @@
 /*Modified modbus client sample from libmodbus.org*/
 /*added error checking to basic sample with messaging
 * changed context variable to ctx 
-* port number is 502 (default) and loop-back address
+* port number is 502 (default) and loop-back address changed to server address
 * user must be SU to access that part of memory
 */
 
@@ -14,7 +14,7 @@ int main(void) {
 	modbus_t *ctx;
 	uint16_t tab_reg[32];
 
-	ctx = modbus_new_tcp("127.0.0.1", 502);  //port requires admin privileges
+	ctx = modbus_new_tcp("140.159.153.159", 502);  //port requires admin privileges
 	//error checking
 	if (ctx == NULL)  {
 		fprintf(stderr, "Unable to allocate libmodbus context\n");
