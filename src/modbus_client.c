@@ -31,7 +31,6 @@ int main(void) {
 	}
 
 	else {
-q
 		printf("Connected to server\n");
 	}
 

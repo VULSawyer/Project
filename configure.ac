@@ -16,9 +16,11 @@ AC_SEARCH_LIBS([pthread_create], [pthread], [],
     AC_MSG_ERROR([No pthreads implementation found]))
 
 PKG_CHECK_MODULES([MODBUS], [libmodbus])
+PKG_CHECK_MODULES([BACNET], [libbacnet])
 
 AC_CONFIG_FILES([
     Makefile
+    scripts/Makefile
     src/Makefile
 ])
 
