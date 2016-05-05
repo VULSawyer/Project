@@ -4,3 +4,7 @@ The application accesses a Modbus server and takes data from two registers and p
 
 
 Additional changes to provide usable remote server IP address and modbus register numbers (2) at 44 & 45
+
+The code was further modified to link to an Autotools version of the BACnet stack, called libbacnet.
+Not sure I have added the "relevant variables" yet.
+
