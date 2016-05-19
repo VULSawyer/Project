@@ -1,3 +1,6 @@
+/* Modified for the project 
+*  by changing IP address, altering test data, adding linked list functions
+*  removing unwanted generic functions and adding modbus functions*/
 #include <stdio.h>
 
 #include <libbacnet/address.h>
@@ -11,13 +14,20 @@
 #include <libbacnet/ai.h>
 #include "bacnet_namespace.h"
 
+
+#include "modbus_tcp.h"				/*modbus headers*/
+#include "sys/socket.h"
+#include "sys/type.h"
+
 #define BACNET_INSTANCE_NO	    12
 #define BACNET_PORT		    0xBAC1
 #define BACNET_INTERFACE	    "lo"
 #define BACNET_DATALINK_TYPE	    "bvlc"
-#define BACNET_SELECT_TIMEOUT_MS    1	    /* ms */
+#define BACNET_SELECT_TIMEOUT_MS    1	    	/* ms */
 
-#define RUN_AS_BBMD_CLIENT	    1
+#define RUN_AS_BBMD_CLIENT	    1		/* true so next part can run*/
+#define SERVER_PORT		    
+#define SERVER_ADDRESS
 
 #if RUN_AS_BBMD_CLIENT
 #define BACNET_BBMD_PORT	    0xBAC0
@@ -25,11 +35,9 @@
 #define BACNET_BBMD_TTL		    90
 #endif
 
-/* If you are trying out the test suite from home, this data matches the data
- * stored in RANDOM_DATA_POOL for device number 12
- * BACnet client will print "Successful match" whenever it is able to receive
- * this set of data. Note that you will not have access to the RANDOM_DATA_POOL
- * for your final submitted application. */
+//---------------------------------------------------------------------
+/* SELF TESTING BACnet client will print "Successful match" whenever it is able to receive
+ * this set of data matching data in EES4100_Testbench/src/random_data /12 */
 static uint16_t test_data[] = {
     0xA4EC, 0x6E39, 0x8740, 0x1065, 0x9134, 0xFC8C };
 #define NUM_TEST_DATA (sizeof(test_data)/sizeof(test_data[0]))
@@ -99,7 +107,8 @@ static bacnet_object_functions_t server_objects[] = {
             bacnet_Analog_Input_Intrinsic_Reporting},
     {MAX_BACNET_OBJECT_TYPE}
 };
-
+//---------------------------------------------------------------------
+/*Running as BBMD client*/
 static void register_with_bbmd(void) {
 #if RUN_AS_BBMD_CLIENT
     /* Thread safety: Shares data with datalink_send_pdu */
@@ -109,7 +118,8 @@ static void register_with_bbmd(void) {
 	    BACNET_BBMD_TTL);
 #endif
 }
-
+//---------------------------------------------------------------------
+/*Setting up minute and second timers*/
 static void *minute_tick(void *arg) {
     while (1) {
 	pthread_mutex_lock(&timer_lock);
@@ -142,25 +152,7 @@ static void *second_tick(void *arg) {
 	 * checking for confirmed services */
 	bacnet_tsm_timer_milliseconds(1000);
 
-	/* Re-enables communications after DCC_Time_Duration_Seconds
-	 * Required for SERVICE_CONFIRMED_DEVICE_COMMUNICATION_CONTROL
-	 * bacnet_dcc_timer_seconds(1); */
-
-	/* State machine for load control object
-	 * Required for OBJECT_LOAD_CONTROL
-	 * bacnet_Load_Control_State_Machine_Handler(); */
-
-	/* Expires any COV subscribers that have finite lifetimes
-	 * Required for SERVICE_CONFIRMED_SUBSCRIBE_COV
-	 * bacnet_handler_cov_timer_seconds(1); */
-
-	/* Monitor Trend Log uLogIntervals and fetch properties
-	 * Required for OBJECT_TRENDLOG
-	 * bacnet_trend_log_timer(1); */
-	
-	/* Run [Object_Type]_Intrinsic_Reporting() for all objects in device
-	 * Required for INTRINSIC_REPORTING
-	 * bacnet_Device_local_reporting(); */
+	/*removed more bacnet functions not used here*/
 	
 	/* Sleep for 1 second */
 	pthread_mutex_unlock(&timer_lock);
@@ -168,12 +160,56 @@ static void *second_tick(void *arg) {
     }
     return arg;
 }
+//---------------------------------------------------------------------
+//MODBUS THREAD IN HERE
 
-static void ms_tick(void) {
-    /* Updates change of value COV subscribers.
-     * Required for SERVICE_CONFIRMED_SUBSCRIBE_COV
-     * bacnet_handler_cov_task(); */
+static void *modbus_start(void *arg)		//allocate and initialize a structure
+{
+	unit16_t tab reg[32];
+	int reg_num;				//register number
+	int inst;				//instance qty
+	modbus_t *ctx;
+	restart:
+	ctx = modbus_new_tcp(SERVER_ADDRESS, SERVER_PORT);//context is modbus server address
+	
+
+	if (ctx==NULL)	{
+		fprintf(stderr, "Unsuccessful allocation and initialization\n");	
+		sleep(1);
+		goto restart;
+	}
+	if (modbus_connect(ctx) == -1)	{	//establish connection
+		fprintf(stderr, "Unsuccessful connection to server\n",modbus_strerr(errno));
+		modbus_free(ctx);
+		modbus_close(ctx);
+		sleep(1);
+		goto restart;
+	}
+	else {
+		fprintf("Successful connection to server\n");
+	}
+
+//read modbus registers	
+
+	{
+	rc = modbus_read_registers(ctx, 44, 2, tab_reg);	//assigned addressed
+	if (rc == -1)	{
+		fprintf(sterr, "Register read failed: %s\n", modbus_strerr(errno));
+		modbus_free(ctx);
+		modbus_close(ctx);
+		goto restart:
+	}
+		for (i = 0; i < rc, i++) {
+			add_to_list(&list_head[i], tab_reg[i]);
+			printf("Register[%d] = [%d] (0x%X)\n", i, tab_reg[i], tab_reg[i]);
+
+		}
+		sleep(0.1);		//100ms sleep
+		return 0;
+	}
 }
+//end of modbus thread
+//---------------------------------------------------------------------
 
 #define BN_UNC(service, handler) \
     bacnet_apdu_set_unconfirmed_handler(		\
@@ -183,13 +219,15 @@ static void ms_tick(void) {
     bacnet_apdu_set_confirmed_handler(			\
 		    SERVICE_CONFIRMED_##service,	\
 		    bacnet_handler_##handler)
+//---------------------------------------------------------------------
+//MAIN -needs modbus thread stuff added
 
 int main(int argc, char **argv) {
     uint8_t rx_buf[bacnet_MAX_MPDU];
     uint16_t pdu_len;
     BACNET_ADDRESS src;
     pthread_t minute_tick_id, second_tick_id;
-
+    pthread_t modbus_start_id;			/*added modbus thread*/
     bacnet_Device_Set_Object_Instance_Number(BACNET_INSTANCE_NO);
     bacnet_address_init();
 
@@ -211,7 +249,10 @@ int main(int argc, char **argv) {
 
     pthread_create(&minute_tick_id, 0, minute_tick, NULL);
     pthread_create(&second_tick_id, 0, second_tick, NULL);
+//Thread 3 added
+    pthread_create(&modbus_start_id, 0, modbus_start, NULL);	//where does this come from?
     
+
     /* Start another thread here to retrieve your allocated registers from the
      * modbus server. This thread should have the following structure (in a
      * separate function):
@@ -223,6 +264,8 @@ int main(int argc, char **argv) {
      *	    Read the required number of registers from the modbus server
      *	    Store the register data into the tail of a linked list 
      */
+//---------------------------------------------------------------------
+/*holding the lock to guarantee atomicity*/
 
     while (1) {
 	pdu_len = bacnet_datalink_receive(
@@ -242,3 +285,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+//END OF PROGRAM
