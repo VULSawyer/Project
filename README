@@ -8,3 +8,5 @@ Additional changes to provide usable remote server IP address and modbus registe
 The code was further modified to link to an Autotools version of the BACnet stack, called libbacnet.
 Not sure I have added the "relevant variables" yet.
 
+Made modifications to bacnet_server so that it can run a modbus thread and function as a client for the modbus server as well as the server to the Bacnet client.
+Some things have yet to be defined.
