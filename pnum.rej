@@ -1,0 +1,76 @@
+--- bacnet_server.c
++++ bacnet_server.c
+@@ -15,11 +15,11 @@
+ #include "bacnet_namespace.h"
+ 
+ //is this all I need?
+-#include "modbus_tcp.h"				/*modbus headers*/
+-#include "sys/socket.h"
+-#include "sys/type.h"
++#include "modbus-tcp.h"				/*modbus headers*/
++//#include "sys/socket.h"
++//#include "sys/type.h"
+ 
+-#define BACNET_DEVICE-ID	52		//Is this correct??	
++#define BACNET_DEVICE_ID	52		//Is this correct??	
+ #define BACNET_INSTANCE_NO	12		//where did this go?
+ #define BACNET_PORT		0xBAC1
+ #define BACNET_INTERFACE	"lo"
+@@ -214,10 +214,12 @@ static void *second_tick(void *arg) {
+ 
+ static void *modbus_start(void *arg)		//allocate and initialize a structure
+ {
+-	unit16_t tab reg[32];
++	uint16_t tab_reg[32];
+ 	int reg_num;				//register number
+ 	int inst;				//instance qty
+ 	modbus_t *ctx;
++	int rc, i;
++
+ 	restart:
+ 	ctx = modbus_new_tcp(SERVER_ADDRESS, SERVER_PORT);//context is modbus server address
+ 	
+@@ -228,14 +230,14 @@ static void *modbus_start(void *arg)		//allocate and initialize a structure
+ 		goto restart;
+ 	}
+ 	if (modbus_connect(ctx) == -1)	{	//establish connection
+-		fprintf(stderr, "Unsuccessful connection to server\n",modbus_strerr(errno));
++		fprintf(stderr, "Unsuccessful connection to server: %s\n",modbus_strerror(errno));
+ 		modbus_free(ctx);
+ 		modbus_close(ctx);
+ 		sleep(1);
+ 		goto restart;
+ 	}
+ 	else {
+-		fprintf("Successful connection to server\n");
++		fprintf(stderr, "Successful connection to server\n");
+ 	}
+ 
+ //read modbus registers	
+@@ -243,13 +245,13 @@ static void *modbus_start(void *arg)		//allocate and initialize a structure
+ 	{
+ 	rc = modbus_read_registers(ctx, 44, 2, tab_reg);	//assigned addressed
+ 	if (rc == -1)	{
+-		fprintf(sterr, "Register read failed: %s\n", modbus_strerr(errno));
++		fprintf(stderr, "Register read failed: %s\n", modbus_strerror(errno));
+ 		modbus_free(ctx);
+ 		modbus_close(ctx);
+-		goto restart:
++		goto restart;
+ 	}
+-		for (i = 0; i < rc, i++) {
+-			add_to_list(&list_head[i], tab_reg[i]);
++		for (i = 0; i < rc; i++) {
++			//add_to_list(&list_head[i], tab_reg[i]);
+ 			printf("Register[%d] = [%d] (0x%X)\n", i, tab_reg[i], tab_reg[i]);
+ 
+ 		}
+@@ -329,7 +331,7 @@ int main(int argc, char **argv) {
+ 			pthread_mutex_unlock(&timer_lock);
+ 		}
+ 
+-		ms_tick();
++		//ms_tick();
+ 	}
+ 
+ 	return 0;
