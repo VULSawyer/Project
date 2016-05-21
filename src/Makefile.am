@@ -1,8 +1,8 @@
 bin_PROGRAMS = bacnet_server
 
 
-#modbus_client_CFLAGS = $(AM_CFLAGS) $(MODBUS_CFLAGS)
-#modbus_client_LDADD = $(AM_LIBS) $(MODBUS_LIBS)
+modbus_client_CFLAGS = $(AM_CFLAGS) $(MODBUS_CFLAGS)
+modbus_client_LDADD = $(AM_LIBS) $(MODBUS_LIBS)
 
 bacnet_server_SOURCES = bacnet_server.c
 bacnet_server_CFLAGS = $(AM_CFLAGS) $(BACNET_CFLAGS) $(MODBUS_CFLAGS)
