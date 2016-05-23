@@ -20,8 +20,8 @@
 
 #define BACNET_DEVICE_ID	44	// my assigned device Id
 #define BACNET_INSTANCE_NO	12	// for self-testing
-#define BACNET_PORT		0xBAC1	/*default bacnet UDP port */
-#define BACNET_INTERFACE	"lo"
+#define BACNET_PORT		0xBAC1	/* default bacnet UDP port */
+#define BACNET_INTERFACE	"lo"	/* loopback mode*/
 #define BACNET_DATALINK_TYPE	"bvlc"	/* Bacnet virtual link control */
 #define BACNET_SELECT_TIMEOUT_MS    0	/* msec */
 
@@ -41,7 +41,6 @@
 /* These are needed for Bacnet maintenance tasks */
 static pthread_mutex_t timer_lock = PTHREAD_MUTEX_INITIALIZER;
 
-
 //---------------------------------------------------------------------
 /* SELF TESTING 
  * BACnet client will print "Successful match" whenever it is able to receive
@@ -58,7 +57,7 @@ static uint16_t test_data[] = {
 /*1. Define linked list objects*/
 typedef struct s_word_object word_object;
 struct s_word_object {
-    uint16_t word;		//word used as a pointer below
+    uint16_t word;	
     word_object *next;
 };
 
@@ -71,7 +70,7 @@ static pthread_cond_t list_data_flush = PTHREAD_COND_INITIALIZER;
 
 /*3. Add objects to list*/
 static void add_to_list(uint16_t word)
-{				//change ptr to match above
+{
     word_object *last_object;	//more variables- have been defined?
     if (list_head == NULL) {
 	last_object = malloc(sizeof(word_object));
@@ -90,18 +89,12 @@ static void add_to_list(uint16_t word)
 //---------------------------------------------------------------------
 //gathering the data from modbus server to send to Bacnet client
 //"get list head object"
-
 //modification required here
 
 static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
 					     rpdata)
 {
     static int index;		//gets incremented below
-
-
-
-
-
 
     int instance_no =
 	bacnet_Analog_Input_Instance_To_Index(rpdata->object_instance);
@@ -110,19 +103,13 @@ static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
 	goto not_pv;
 
     printf("AI_Present_Value request for instance %i\n", instance_no);
-    /* Update the values to be sent to the BACnet client here.
-     * The data should be read from the head of a linked list. You are required
-     * to implement this list functionality.
-     *      bacnet_Analog_Input_Present_Value_Set() 
-     *      First argument: Instance No
-     *      Second argument: data to be sent
-     *
-     * Without reconfiguring libbacnet, a maximum of 4 values may be sent */
+    
+    /* Without reconfiguring libbacnet, a maximum of 4 values may be sent */
     bacnet_Analog_Input_Present_Value_Set(0, test_data[index++]);
-    /* bacnet_Analog_Input_Present_Value_Set(1, test_data[index++]); */
+    bacnet_Analog_Input_Present_Value_Set(1, test_data[index++]);
     /* bacnet_Analog_Input_Present_Value_Set(2, test_data[index++]); */
 
-    //what is going on here?
+    //setting up the thread for number of instances to be sent?
 
     if (index == NUM_TEST_DATA)
 	index = 0;
@@ -145,11 +132,11 @@ static bacnet_object_functions_t server_objects[] = {
      bacnet_Device_Write_Property_Local,
      bacnet_Device_Property_Lists,
      bacnet_DeviceGetRRInfo,
-     NULL,			/* Iterator */
-     NULL,			/* Value_Lists */
-     NULL,			/* COV */
-     NULL,			/* COV Clear */
-     NULL /* Intrinsic Reporting */ },
+     NULL,	/* Iterator */
+     NULL,	/* Value_Lists */
+     NULL,	/* COV */
+     NULL,	/* COV Clear */
+     NULL 	/* Intrinsic Reporting */ },
     {bacnet_OBJECT_ANALOG_INPUT,
      bacnet_Analog_Input_Init,
      bacnet_Analog_Input_Count,
@@ -159,8 +146,8 @@ static bacnet_object_functions_t server_objects[] = {
      Update_Analog_Input_Read_Property,
      bacnet_Analog_Input_Write_Property,
      bacnet_Analog_Input_Property_Lists,
-     NULL /* ReadRangeInfo */ ,
-     NULL /* Iterator */ ,
+     NULL 	/* ReadRangeInfo */ ,
+     NULL 	/* Iterator */ ,
      bacnet_Analog_Input_Encode_Value_List,
      bacnet_Analog_Input_Change_Of_Value,
      bacnet_Analog_Input_Change_Of_Value_Clear,
@@ -234,9 +221,8 @@ static void *second_tick(void *arg)
 static void *modbus_side(void *arg)	//allocate and initialize a structure
 {
     uint16_t tab_reg[32];
-    int rc, i;			//will rename to be clear
-    int reg_num;		//register number or count?
-    int inst;			//instance qty
+    int rv;			//return value
+    int i;			//iteration 
     modbus_t *ctx;
 
     printf("got to the modbus thread\n");	//test print       
@@ -266,9 +252,9 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 //read modbus registers 
 
     while (1) {				//assigned address info
-	rc = modbus_read_registers(ctx, BACNET_DEVICE_ID, 2, tab_reg);
-	printf("got into the read regs rc value is: %d\n", rc);	//test print
-	if (rc == -1) {
+	rv = modbus_read_registers(ctx, BACNET_DEVICE_ID, 2, tab_reg);
+	printf("got into the read regs rv value is: %d\n", rv);	//test print
+	if (rv == -1) {
 	    fprintf(stderr, "Register read failed: %s\n",
 		    modbus_strerror(errno));
 	    modbus_free(ctx);
@@ -276,7 +262,7 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 	    sleep(1);
 	    goto modbus_restart;
 	}
-	for (i = 0; i < rc; i++) {
+	for (i = 0; i < rv; i++) {
 	    //add_to_list(&list_head[i], tab_reg[i]);
 	    printf("Register[%d] = [%d] (0x%X)\n", i,
 		   tab_reg[i], tab_reg[i]);
