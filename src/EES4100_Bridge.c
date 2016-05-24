@@ -1,7 +1,7 @@
-/* Modified bacnet_server.c for modbus thread with looping
-*  by changing IP address, altering test data, adding linked list functions
-*  removing unwanted generic functions and adding modbus functions
-*  Sorting out names*/
+/* EES4100 Bridge Application
+*  First pass at contacting the remote server
+*  Changed IP address and app name
+*  Tested */
 
 #include <stdio.h>
 
@@ -18,23 +18,23 @@
 
 #include "modbus-tcp.h"		/*modbus headers include all required*/
 
-#define BACNET_DEVICE_ID	44	// my assigned device Id
-#define BACNET_INSTANCE_NO	12	// for self-testing
-#define BACNET_PORT		0xBAC1	/* default bacnet UDP port */
+#define BACNET_DEVICE_ID	44	/* my assigned device Id*/
+//#define BACNET_INSTANCE_NO	12	/* used for self-testing*/
+#define BACNET_PORT		0xBAC1	/* default Bacnet UDP port */
 #define BACNET_INTERFACE	"lo"	/* loopback mode*/
 #define BACNET_DATALINK_TYPE	"bvlc"	/* Bacnet virtual link control */
-#define BACNET_SELECT_TIMEOUT_MS    0	/* msec */
+#define BACNET_SELECT_TIMEOUT_MS    1	/* msec */
 
 #define SERVER_PORT		502	// Modbus default port number
-//#define SERVER_PORT           0xBAC0          /*  another UDP port*/
-#define SERVER_ADDRESS	"127.0.0.1"	// loopback address for testing
-//#define SERVER_ADDRESS                "140.159.153.159"    //modbus server address
+#define SERVER_PORT          	0xBAC0	/*  another UDP port*/
+//#define SERVER_ADDRESS	"127.0.0.1"	// loopback address for testing
+#define SERVER_ADDRESS		"140.159.153.159"    //modbus server address
 
-//#define RUN_AS_BBMD_CLIENT	1		/* true so next part will run*/
+#define RUN_AS_BBMD_CLIENT	1		/* true so next part will run*/
 
-#if RUN_AS_BBMD_CLIENT		/* BBMD =>talking to BACnet client */
+#if RUN_AS_BBMD_CLIENT			/* BBMD =>talking to BACnet client */
 #define BACNET_BBMD_PORT	0xBAC1
-#define BACNET_BBMD_ADDRESS	"140.159.160.7"	/* check to see if BBMD operating */
+#define BACNET_BBMD_ADDRESS	"140.159.160.7"	/* when BBMD operating */
 #define BACNET_BBMD_TTL		90
 #endif
 
@@ -42,17 +42,7 @@
 static pthread_mutex_t timer_lock = PTHREAD_MUTEX_INITIALIZER;
 
 //---------------------------------------------------------------------
-/* SELF TESTING 
- * BACnet client will print "Successful match" whenever it is able to receive
- * this set of data (matching data in EES4100_Testbench/src/random_data /12) */
-static uint16_t test_data[] = {
-    0xA4EC, 0x6E39, 0x8740, 0x1065, 0x9134, 0xFC8C
-};
-
-#define NUM_TEST_DATA (sizeof(test_data)/sizeof(test_data[0]))
-
-//---------------------------------------------------------------------
-//Arranging sequence for listing the data
+//Arranging sequence for listing the data from Modbus server
 
 /*1. Define linked list objects*/
 typedef struct s_word_object word_object;
@@ -89,7 +79,6 @@ static void add_to_list(uint16_t word)
 //---------------------------------------------------------------------
 //gathering the data from modbus server to send to Bacnet client
 //"get list head object"
-//modification required here
 
 static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
 					     rpdata)
@@ -193,7 +182,6 @@ static void *minute_tick(void *arg)
     }
     return arg;
 }
-
 static void *second_tick(void *arg)
 {
     while (1) {
@@ -223,17 +211,15 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
     uint16_t tab_reg[32];
     int rv;			//return value
     int i;			//iteration 
-    modbus_t *ctx;
+    modbus_t *ctx;		//pointer to structure
 
     printf("got to the modbus thread\n");	//test print       
 
   modbus_restart:		//retry connection at this point
 
     ctx = modbus_new_tcp(SERVER_ADDRESS, SERVER_PORT);
-    //context is modbus server address
 
-
-    if (ctx == NULL) {
+    if (ctx == NULL) {		//structure not allocated
 	fprintf(stderr, "Unsuccessful allocation and initialization\n");
 	sleep(1);
 	goto modbus_restart;
@@ -253,7 +239,7 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 
     while (1) {				//assigned address info
 	rv = modbus_read_registers(ctx, BACNET_DEVICE_ID, 2, tab_reg);
-	printf("got into the read regs rv value is: %d\n", rv);	//test print
+	printf("got into the read regs- rv value is: %d\n", rv);	//test print
 	if (rv == -1) {
 	    fprintf(stderr, "Register read failed: %s\n",
 		    modbus_strerror(errno));
@@ -317,21 +303,10 @@ int main(int argc, char **argv)
 
     pthread_create(&minute_tick_id, 0, minute_tick, NULL);
     pthread_create(&second_tick_id, 0, second_tick, NULL);
-    pthread_create(&modbus_start_id, 0, modbus_side, NULL);//make modbus thread 
+    pthread_create(&modbus_start_id, 0, modbus_side, NULL);
 
-    /* Start another thread here to retrieve your allocated registers from 
-     * the modbus server. This thread should have the following structure 
-     * (in a separate function):
-     *
-     * Initialise:
-     *      Connect to the modbus server
-     *
-     * Loop:
-     *      Read the required number of registers from the modbus server
-     *      Store the register data into the tail of a linked list 
-     */
 //---------------------------------------------------------------------
-/*holding the lock to guarantee atomicity*/
+/*holding the lock to ensure synchronised operations */
 
     while (1) {
 	pdu_len =
@@ -347,5 +322,4 @@ int main(int argc, char **argv)
 	}
     }
     return 0;
-}
-//END OF PROGRAM
+}				//END OF PROGRAM
