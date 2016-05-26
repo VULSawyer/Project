@@ -1,12 +1,12 @@
-bin_PROGRAMS = EES4100_Bridge
+bin_PROGRAMS = bacnet_server
 
 
 modbus_client_CFLAGS = $(AM_CFLAGS) $(MODBUS_CFLAGS)
 modbus_client_LDADD = $(AM_LIBS) $(MODBUS_LIBS)
 
-EES4100_Bridge_SOURCES = EES4100_Bridge.c
-EES4100_Bridge_CFLAGS = $(AM_CFLAGS) $(BACNET_CFLAGS) $(MODBUS_CFLAGS)
-EES4100_Bridge_LDADD = $(AM_LIBS) $(BACNET_LIBS) $(MODBUS_LIBS)
+bacnet_server_SOURCES = bacnet_server.c
+bacnet_server_CFLAGS = $(AM_CFLAGS) $(BACNET_CFLAGS) $(MODBUS_CFLAGS)
+bacnet_server_LDADD = $(AM_LIBS) $(BACNET_LIBS) $(MODBUS_LIBS)
 
 BACNET_DEPENDENT_SRC = bacnet_server.c
 
