@@ -1,7 +1,10 @@
-/* EES4100 Bridge Application
-*  First pass at contacting the remote server
-*  Changed IP address to allow access
-*  Tested first with different name (EES4100_Bridge.c), but had to go back to old name */
+/* EES4100 Bridge Application with patch for link lists applied
+*  Using loopback address until server fixed
+*  comments:
+*  	list_heads is a pointer
+*  	NUM_LISTS DATA_LENGTH etc.
+*
+*  With KT's comments added */
 
 #include <stdio.h>
 
@@ -16,20 +19,20 @@
 #include <libbacnet/ai.h>
 #include "bacnet_namespace.h"
 
-#include "modbus-tcp.h"		/*modbus headers include all required*/
+#include "modbus-tcp.h"		/*Modbus header includes all else required*/
 
-#define BACNET_DEVICE_ID	44	/* my assigned device Id*/
+#define SERVER_PORT		502	/* Modbus default port number*/
+#define SERVER_ADDRESS	"127.0.0.1"	/* loopback address for testing*/
+//#define SERVER_ADDRESS	"140.159.153.159"    /* remote Modbus server address*/
+
+#define BACNET_DEVICE_ID	44	/* assigned device Id*/
+#define INST_NUM		2	/* number of Analog instances */
 //#define BACNET_INSTANCE_NO	12	/* used for self-testing*/
 #define BACNET_PORT		0xBAC1	/* default Bacnet UDP port */
 #define BACNET_INTERFACE	"lo"	/* loopback mode*/
 #define BACNET_DATALINK_TYPE	"bvlc"	/* Bacnet virtual link control */
 #define BACNET_SELECT_TIMEOUT_MS    1	/* msec */
-
-#define SERVER_PORT		502	// Modbus default port number
-//#define SERVER_ADDRESS	"127.0.0.1"	// loopback address for testing
-#define SERVER_ADDRESS		"140.159.153.159"    //modbus server address
-
-#define RUN_AS_BBMD_CLIENT	1		/* true so next part will run*/
+#define RUN_AS_BBMD_CLIENT	1	/* for if below*/
 
 #if RUN_AS_BBMD_CLIENT			/* BBMD =>talking to BACnet client */
 #define BACNET_BBMD_PORT	0xBAC0
@@ -37,53 +40,134 @@
 #define BACNET_BBMD_TTL		90
 #endif
 
-/* These are needed for Bacnet maintenance tasks */
-static pthread_mutex_t timer_lock = PTHREAD_MUTEX_INITIALIZER;
+//--------Arranging sequence for listing the data from Modbus server-----
 
-//---------------------------------------------------------------------
-//Arranging sequence for listing the data from Modbus server
+/*1. Define linked list object type*/
 
-/*1. Define linked list objects*/
 typedef struct s_word_object word_object;
 struct s_word_object {
-    uint16_t word;	
-    word_object *next;
+    uint16_t number;	
+    word_object *next;	//next somehow has the address for the word_obj value
 };
 
-static word_object *list_head;
+static word_object *list_heads[INST_NUM];
 
-/*2. Share list using list lock*/
+/*2. Use list lock to share the list*/
+
+/* These are needed for Bacnet maintenance tasks */
+static pthread_mutex_t timer_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t list_data_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t list_data_flush = PTHREAD_COND_INITIALIZER;
 
 /*3. Add objects to list*/
-static void add_to_list(uint16_t word)
+
+static void add_to_list(word_object **list_heads, uint16_t number)//do I need to reiterate the type?
 {
-    word_object *last_object;	//more variables- have been defined?
-    if (list_head == NULL) {
-	last_object = malloc(sizeof(word_object));
-	list_head = last_object;	//if no value, last obj to top?
-    } else {
-	last_object = list_head;	/*4. Allocate memory to each object */
-	while (last_object->next)
-	    last_object = last_object->next;
-	last_object->next = malloc(sizeof(word_object));
-	last_object = last_object->next;
-    }
-    last_object->word = word;
-    last_object->next = NULL;
+	pthread_mutex_lock(&list_lock);		//list lock here?
+	printf("adding to list\n");		//test print 
+
+    word_object *last_object, *temp_object;	//add another pointer variable for array
+/* allocate mem for last object*/
+	last_object = malloc(sizeof(word_object));	//why alloc data going to temp, not last?
+/* set up a last object*/
+	last_object->number = number;		//incrementing the number value?
+/*check list head addr value*/
+    if (list_heads == NULL) {		
+	list_heads = last_object;		//put last object at the head if empty
+	first_object = *list_heads;		//load the first_obj from addr at list top
+	*list_heads = (*list_heads)->next;	//increment the address?
+    } 
+	else {
+	last_object = *list_heads;		//if not empty look for data	
+		while (last_object->next){
+	    	last_object = last_object->next;//go through the list
+		}
+    	last_object->next = temp_object;	//is this new data?
+	}
+					//DO SOME UNLOCKING HERE? or-
+pthread_mutex_unlock(&list_lock);
+pthread_cond_signal(&list_data_ready);
+
+/* Get list head object TO SEND TO BACNET */
+/* Retrieve the first object in the linked list. Note that this function must
+ * be called with list_lock held */
+
+pthread_mutex_lock(&list_lock);		// -should I leave it locked then?
 }
 
-//---------------------------------------------------------------------
+/*4. Take the data from the top of the list*/
+
+static word_object *list_get_first(word_object **list_heads) 
+{
+     word_object *first_object;
+    first_object = *list_heads;
+    *list_heads = (*list_heads)->next;
+     return first_object;
+}
+
+/*  NOT SURE*/
+ 
+static void *print_func(void *arg) {
+    word_object **list_heads = (word_object **) arg;
+     word_object *current_object;
+ 
+    fprintf(stderr, "Print thread starting\n");//is this just for checking?
+
+     while(1) {
+ 	pthread_mutex_lock(&list_lock);//
+ 
+	while (*list_heads == NULL) {			//while nil address in list_heads wait?
+ 	    pthread_cond_wait(&list_data_ready, &list_lock);	//address for these ptrs 
+ 	}
+ 
+	current_object = list_get_first(list_heads);
+ 
+ 	pthread_mutex_unlock(&list_lock);
+     }
+     return arg;
+}
+
+//5. Flush the list
+
+static void list_flush(word_object *list_head) 
+{
+     pthread_mutex_lock(&list_lock);
+     while (list_head != NULL) {
+	pthread_cond_signal(&list_data_ready);
+	pthread_cond_wait(&list_data_flush, &list_lock);
+	}
+ 	pthread_mutex_unlock(&list_lock);
+}
+
+// starting the server??
+static void start_server(void) 
+{	//other stuff here?
+     fprintf(stderr, "Starting server\n");
+     pthread_create(&print_thread, NULL, print_func, &list_heads[0]);
+ 
+     socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+ 
+ 	/* Process data */
+	add_to_list(data);
+	add_to_list(&list_heads[0], data);
+    
+    list_flush(list_heads[0]);
+ }
+
+//starting the client??
+ static void start_client(int count) {	// and what follows??
+
+
+//-----------------------------end of changed linklist bit------------------------------
 //gathering the data from modbus server to send to Bacnet client
-//"get list head object"
+
+/*6. READ PROPERTY*/
 
 static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
 					     rpdata)
 {
-    static int index;		//gets incremented below
-
+    static int index;		//index will get incremented below
     int instance_no =
 	bacnet_Analog_Input_Instance_To_Index(rpdata->object_instance);
 
@@ -107,7 +191,7 @@ static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
     return bacnet_Analog_Input_Read_Property(rpdata);
 }
 
-//---------------------------------------------------------------------
+/* SERVER OBJECTS*/
 
 static bacnet_object_functions_t server_objects[] = {
     {bacnet_OBJECT_DEVICE,
@@ -145,7 +229,8 @@ static bacnet_object_functions_t server_objects[] = {
 
 //---------------------------------------------------------------------
 
-/*Running as BBMD client*/
+/*REGISTER AS A FOREIGN DEVICE*/
+
 static void register_with_bbmd(void)
 {
 #if RUN_AS_BBMD_CLIENT
@@ -160,6 +245,7 @@ static void register_with_bbmd(void)
 //---------------------------------------------------------------------
 
 /*Setting up minute and second timers*/
+
 static void *minute_tick(void *arg)
 {
     while (1) {
@@ -203,22 +289,24 @@ static void *second_tick(void *arg)
 }
 
 //---------------------------------------------------------------------
-//MODBUS THREAD IN HERE
+/*START OF MODBUS THREAD*/
 
 static void *modbus_side(void *arg)	//allocate and initialize a structure
 {
     uint16_t tab_reg[32];
-    int rv;			//return value
-    int i;			//iteration 
-    modbus_t *ctx;		//pointer to structure
+    int rv;				//return value
+    int i;				//iteration 
+    modbus_t *ctx;			//pointer to structure
 
     printf("got to the modbus thread\n");	//test print       
 
-  modbus_restart:		//retry connection at this point
+  modbus_restart:			//retry connection at this point
+
+//establish the context for communication
 
     ctx = modbus_new_tcp(SERVER_ADDRESS, SERVER_PORT);
 
-    if (ctx == NULL) {		//structure not allocated
+    if (ctx == NULL) {			//structure not allocated
 	fprintf(stderr, "Unsuccessful allocation and initialization\n");
 	sleep(1);
 	goto modbus_restart;
@@ -248,17 +336,18 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 	    goto modbus_restart;
 	}
 	for (i = 0; i < rv; i++) {
-	    //add_to_list(&list_head[i], tab_reg[i]);
++	    /* PC:If you'd like to index list head as an array here, it must be
++	     * declared as an array - see above */
+	    //add_to_list(&list_heads[i], tab_reg[i]);
 	    printf("Register[%d] = [%d] (0x%X)\n", i,
 		   tab_reg[i], tab_reg[i]);
 	}
 	usleep(100000);		//100ms sleep
-	//return 0;
+	//return 0;  remove permanently?
     }
     printf("got to the end of modbus thread \n");	//test print       
-}
+}		//end of modbus thread
 
-//end of modbus thread
 //---------------------------------------------------------------------
 
 #define BN_UNC(service, handler) \
