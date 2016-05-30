@@ -104,11 +104,11 @@ static word_object *list_get_first(word_object **list_heads)
     	*list_heads = (*list_heads)->next;	//reassign
      	return first_object;
 }
-//----------------------what is this doing?----------
+/*----------------------what is this doing?----------
 static void *print_func(void *arg) {
       pthread_mutex_lock(&list_lock);		//Lock needed?		
 
-   	word_object **list_heads = (word_object **) arg;
+   	word_object **list_heads = (word_object **list_heads) arg;
      	word_object *current_object;
  
     	fprintf(stderr, "Print thread starting\n");//is this just for checking?
@@ -125,7 +125,7 @@ static void *print_func(void *arg) {
  	pthread_mutex_unlock(&list_lock);	//Lock needed?
      }
      return arg;
-}
+}*/
 
 //5. Flush the list
 
@@ -162,30 +162,44 @@ static void start_server(void)
 
 /*6. READ PROPERTY*/ //gathering the data from modbus server to send to Bacnet client
 
+//need  a current value object to push through to client
+
 static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA
 						*rpdata)
 {
     static int index;		//index will get incremented below
     int instance = bacnet_Analog_Input_Instance_To_Index(
 					rpdata->object_instance);
-    if (rpdata->object_property != bacnet_PROP_PRESENT_VALUE)
+    if (rpdata->object_property != bacnet_PROP_PRESENT_VALUE){
 	goto not_pv;
+	}		//otherwise check the instance as well
+     	pthread_mutex_lock(&list_lock);		// LOCK list for this operation
+	
+	if (list_heads[instance]== NULL) {
 
+ 	pthread_mutex_unlock(&list_lock);	//unlock list before skipping
+
+	goto not_pv;
+	}
     printf("AI_Present_Value request for instance %i\n", instance);
-    
-    /* Without reconfiguring libbacnet, a maximum of 4 values may be sent */
+
+//do I need to test for data?? or is this only for self test    
+    						/* maximum 4 values sent in libbacnet */
     //bacnet_Analog_Input_Present_Value_Set(0, test_data[index++]);
     //bacnet_Analog_Input_Present_Value_Set(1, test_data[index++]);
-    /* bacnet_Analog_Input_Present_Value_Set(2, test_data[index++]); */
+    //bacnet_Analog_Input_Present_Value_Set(2, test_data[index++]);
 
     //setting up the thread for number of instances to be sent?
 
-    //if (index == INST_NUM)	//when all instances reset
+    //if (index == INST_NUM)	//when all instances read, reset
 //	index = 0;
 
-  	not_pv:			/*If not present value program comes here */
-    printf("Not Present_Value\n");	//test print
-    return bacnet_Analog_Input_Read_Property(rpdata);
+
+ 	pthread_mutex_unlock(&list_lock);	//unlock list again
+
+	not_pv:			/*If not present value or instance null, skips here */
+    	printf("Not Present_Value\n");	//test print
+    	return bacnet_Analog_Input_Read_Property(rpdata);
 }
 
 //-----------------------------end of changed linklist bit------------------------------
@@ -320,10 +334,10 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 	fprintf(stderr, "Successful connection to server\n");
     }
 
-//read modbus registers 
-//comment: see line 344
-//add_to_list(list_heads[0], tab_reg[0])) for 44
-//add_to_list(list_heads[1], tab_reg[1])) for 45
+/* Read modbus registers*/ 
+	//comment: see line 344
+	//add_to_list(list_heads[0], tab_reg[0])) for reg 44
+	//add_to_list(list_heads[1], tab_reg[1])) for reg 45
 
     while (1) {				//assigned address info
 	rv = modbus_read_registers(ctx, BACNET_DEVICE_ID, INST_NUM, tab_reg);
@@ -337,11 +351,11 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
 	    goto modbus_restart;
 	}
 	for (i = 0; i < rv; i++) {
-+	    /* PC:If you'd like to index list head as an array here, it must be
-+	     * declared as an array - see above */
+	    /* PC:If you'd like to index list head as an array here, it must be
+	     * declared as an array - as: int i[2] = {"1","2"}       see above */
 	    //add_to_list(&list_heads[i], tab_reg[i]);
-	    printf("Register[%d] = [%d] (0x%X)\n", i,
-		   tab_reg[i], tab_reg[i]);
+	    printf("Register[%d] = [%d] (0x%X)\n", i,tab_reg[i],	//reg in decimal and hex
+	    		tab_reg[i]);
 	}
 	usleep(100000);		//100ms sleep
 	//return 0;  remove permanently?
@@ -369,6 +383,7 @@ int main(int argc, char **argv)
     BACNET_ADDRESS src;
     pthread_t minute_tick_id, second_tick_id;
     pthread_t modbus_start_id;	/*added modbus thread */
+
     bacnet_Device_Set_Object_Instance_Number(BACNET_DEVICE_ID);
     bacnet_address_init();
 
@@ -398,8 +413,7 @@ int main(int argc, char **argv)
 /*holding the lock to ensure synchronised operations */
 
     while (1) {
-	pdu_len =
-	    bacnet_datalink_receive(&src, rx_buf, bacnet_MAX_MPDU,
+	pdu_len = bacnet_datalink_receive(&src, rx_buf, bacnet_MAX_MPDU,
 				    BACNET_SELECT_TIMEOUT_MS);
 	if (pdu_len) {
 	    /* May call any registered handler.
