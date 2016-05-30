@@ -3,6 +3,7 @@
 *  comments:
 *  	list_heads is a pointer
 *  	NUM_LISTS DATA_LENGTH etc.
+*	temp_object, last_object
 *
 *  With KT's comments added */
 
@@ -26,7 +27,7 @@
 //#define SERVER_ADDRESS	"140.159.153.159"    /* remote Modbus server address*/
 
 #define BACNET_DEVICE_ID	44	/* assigned device Id*/
-#define INST_NUM		2	/* number of Analog instances */
+#define INST_NUM		2	/* total Analog Instances */
 //#define BACNET_INSTANCE_NO	12	/* used for self-testing*/
 #define BACNET_PORT		0xBAC1	/* default Bacnet UDP port */
 #define BACNET_INTERFACE	"lo"	/* loopback mode*/
@@ -40,90 +41,88 @@
 #define BACNET_BBMD_TTL		90
 #endif
 
-//--------Arranging sequence for listing the data from Modbus server-----
+//--------Setting up threads: Modbus client and BACnet server-----
 
 /*1. Define linked list object type*/
 
 typedef struct s_word_object word_object;
 struct s_word_object {
-    uint16_t number;	
-    word_object *next;	//next somehow has the address for the word_obj value
+    uint16_t number;	//variable used to hold AI data
+    word_object *next;	//next points to the address for the word_obj value (data)
 };
 
-static word_object *list_heads[INST_NUM];
+static word_object *list_heads[INST_NUM];	//there are 2 instances
 
-/*2. Use list lock to share the list*/
+/*2. Use of list lock to share the list between threads*/
 
-/* These are needed for Bacnet maintenance tasks */
+	/* These are needed for Bacnet maintenance tasks- all of them? */
 static pthread_mutex_t timer_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t list_data_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t list_data_flush = PTHREAD_COND_INITIALIZER;
 
-/*3. Add objects to list*/
+/*3. For the Modbus server side: Add objects to list- make sure it gets locked/unlocked*/
 
-static void add_to_list(word_object **list_heads, uint16_t number)//do I need to reiterate the type?
+static void add_to_list(word_object **list_heads, uint16_t number)
 {
-	pthread_mutex_lock(&list_lock);		//list lock here?
+	pthread_mutex_lock(&list_lock);		//LOCK to begin list operation
 	printf("adding to list\n");		//test print 
 
-    word_object *last_object, *temp_object;	//add another pointer variable for array
-/* allocate mem for last object*/
-	last_object = malloc(sizeof(word_object));	//why alloc data going to temp, not last?
-/* set up a last object*/
-	last_object->number = number;		//incrementing the number value?
-/*check list head addr value*/
-    if (list_heads == NULL) {		
-	list_heads = last_object;		//put last object at the head if empty
-	first_object = *list_heads;		//load the first_obj from addr at list top
-	*list_heads = (*list_heads)->next;	//increment the address?
-    } 
+    	word_object *last_object, *temp_object;	//2nd pointer variable for array
+
+	temp_object = malloc(sizeof(word_object));	/* allocate mem for temp object*/	
+
+	temp_object->number = number;		/*number dereferenced to save its value*/
+	
+	temp_object->next = NULL;		/* next pointer set to NULL */
+
+    	if (*list_heads == NULL) {		/*check list head addr value*/		
+		*list_heads = temp_object;	//put temp object at the head if empty
+    	} 
 	else {
-	last_object = *list_heads;		//if not empty look for data	
+	last_object = *list_heads;		//if not empty go to next data	
 		while (last_object->next){
 	    	last_object = last_object->next;//go through the list
 		}
     	last_object->next = temp_object;	//is this new data?
 	}
-					//DO SOME UNLOCKING HERE? or-
-pthread_mutex_unlock(&list_lock);
-pthread_cond_signal(&list_data_ready);
+					
+	pthread_mutex_unlock(&list_lock);	//unlock list again
+	pthread_cond_signal(&list_data_ready);
+}
+
+/*4. For the BACnet Client side:Take data from the top of the list*/
 
 /* Get list head object TO SEND TO BACNET */
 /* Retrieve the first object in the linked list. Note that this function must
  * be called with list_lock held */
 
-pthread_mutex_lock(&list_lock);		// -should I leave it locked then?
-}
-
-/*4. Take the data from the top of the list*/
-
 static word_object *list_get_first(word_object **list_heads) 
 {
-     word_object *first_object;
-    first_object = *list_heads;
-    *list_heads = (*list_heads)->next;
-     return first_object;
+	word_object *first_object;
+    	first_object = *list_heads;
+    	*list_heads = (*list_heads)->next;	//reassign
+     	return first_object;
 }
-
-/*  NOT SURE*/
- 
+//----------------------what is this doing?----------
 static void *print_func(void *arg) {
-    word_object **list_heads = (word_object **) arg;
-     word_object *current_object;
- 
-    fprintf(stderr, "Print thread starting\n");//is this just for checking?
+      pthread_mutex_lock(&list_lock);		//Lock needed?		
 
-     while(1) {
- 	pthread_mutex_lock(&list_lock);//
+   	word_object **list_heads = (word_object **) arg;
+     	word_object *current_object;
  
-	while (*list_heads == NULL) {			//while nil address in list_heads wait?
+    	fprintf(stderr, "Print thread starting\n");//is this just for checking?
+
+     while(1) {					//keep doing this until???
+ 	pthread_mutex_lock(&list_lock);		//Lock needed?	
+ 
+	while (*list_heads[0] == NULL) {	//while nil address in list_heads wait?
  	    pthread_cond_wait(&list_data_ready, &list_lock);	//address for these ptrs 
  	}
  
-	current_object = list_get_first(list_heads);
+	current_object = list_get_first(&list_heads[0]);
  
- 	pthread_mutex_unlock(&list_lock);
+ 	pthread_mutex_unlock(&list_lock);	//Lock needed?
      }
      return arg;
 }
@@ -132,49 +131,47 @@ static void *print_func(void *arg) {
 
 static void list_flush(word_object *list_head) 
 {
-     pthread_mutex_lock(&list_lock);
-     while (list_head != NULL) {
-	pthread_cond_signal(&list_data_ready);
-	pthread_cond_wait(&list_data_flush, &list_lock);
+     	pthread_mutex_lock(&list_lock);		// LOCK list for this operation
+     	while (list_head != NULL) {
+		pthread_cond_signal(&list_data_ready);
+		pthread_cond_wait(&list_data_flush, &list_lock);
 	}
- 	pthread_mutex_unlock(&list_lock);
+ 	pthread_mutex_unlock(&list_lock);	//unlock list again
 }
-
-// starting the server??
+//-------------add to list flushing?--------------
+#if 0			//what is this?
+			// starting the server??
 static void start_server(void) 
-{	//other stuff here?
+{			//other stuff here?
      fprintf(stderr, "Starting server\n");
      pthread_create(&print_thread, NULL, print_func, &list_heads[0]);
- 
      socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
  
  	/* Process data */
 	add_to_list(data);
 	add_to_list(&list_heads[0], data);
-    
-    list_flush(list_heads[0]);
+      	list_flush(list_heads[0]);
  }
 
-//starting the client??
+			//starting the client??
  static void start_client(int count) {	// and what follows??
 
+#endif
+//--------------------------
 
-//-----------------------------end of changed linklist bit------------------------------
-//gathering the data from modbus server to send to Bacnet client
 
-/*6. READ PROPERTY*/
+/*6. READ PROPERTY*/ //gathering the data from modbus server to send to Bacnet client
 
-static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
-					     rpdata)
+static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA
+						*rpdata)
 {
     static int index;		//index will get incremented below
-    int instance_no =
-	bacnet_Analog_Input_Instance_To_Index(rpdata->object_instance);
-
+    int instance = bacnet_Analog_Input_Instance_To_Index(
+					rpdata->object_instance);
     if (rpdata->object_property != bacnet_PROP_PRESENT_VALUE)
 	goto not_pv;
 
-    printf("AI_Present_Value request for instance %i\n", instance_no);
+    printf("AI_Present_Value request for instance %i\n", instance);
     
     /* Without reconfiguring libbacnet, a maximum of 4 values may be sent */
     //bacnet_Analog_Input_Present_Value_Set(0, test_data[index++]);
@@ -183,14 +180,15 @@ static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA *
 
     //setting up the thread for number of instances to be sent?
 
-    //if (index == NUM_TEST_DATA)
+    //if (index == INST_NUM)	//when all instances reset
 //	index = 0;
 
-  not_pv:			/*If not present value program comes here */
+  	not_pv:			/*If not present value program comes here */
     printf("Not Present_Value\n");	//test print
     return bacnet_Analog_Input_Read_Property(rpdata);
 }
 
+//-----------------------------end of changed linklist bit------------------------------
 /* SERVER OBJECTS*/
 
 static bacnet_object_functions_t server_objects[] = {
@@ -323,9 +321,12 @@ static void *modbus_side(void *arg)	//allocate and initialize a structure
     }
 
 //read modbus registers 
+//comment: see line 344
+//add_to_list(list_heads[0], tab_reg[0])) for 44
+//add_to_list(list_heads[1], tab_reg[1])) for 45
 
     while (1) {				//assigned address info
-	rv = modbus_read_registers(ctx, BACNET_DEVICE_ID, 2, tab_reg);
+	rv = modbus_read_registers(ctx, BACNET_DEVICE_ID, INST_NUM, tab_reg);
 	printf("got into the read regs- rv value is: %d\n", rv);	//test print
 	if (rv == -1) {
 	    fprintf(stderr, "Register read failed: %s\n",
