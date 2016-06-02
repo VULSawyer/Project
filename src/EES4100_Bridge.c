@@ -1,9 +1,9 @@
 /* EES4100 Bridge Application with patch for link lists applied
 *  Using remote server addresses
 *  comments:
-		changed some names
-*
-*  With KT's comments added */
+	Changed some names for clarity
+*	Added dereferencing for the BACnet analog input read operations
+*  	Cleaned up the presentation*/
 
 #include <stdio.h>
 
@@ -58,19 +58,19 @@ static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t list_data_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t list_data_flush = PTHREAD_COND_INITIALIZER;
 
-/*3. For the Modbus server side: Add objects to list- make sure it gets locked/unlocked*/
+/*3. Modbus server side: Add objects to list- make sure it gets locked/unlocked*/
 
 static void add_to_list(AI_object ** list_heads, uint16_t number)
 {
     pthread_mutex_lock(&list_lock);	//LOCK to begin list operation
-    printf("adding to list\n");	//test print 
+    printf("adding to list\n");		//test print 
 
     AI_object *last_object, *temp_object;	/* 2nd pointer variable for array */
     temp_object = malloc(sizeof(AI_object));	/* allocate of memory for data */
     temp_object->number = number;	/* number dereferenced to save its value */
-    temp_object->next = NULL;	/* next pointer set to NULL */
+    temp_object->next = NULL;		/* next pointer set to NULL */
 
-    if (*list_heads == NULL) {	/* check list head addr value */
+    if (*list_heads == NULL) {		/* check list head addr value */
 	*list_heads = temp_object;	/* put temp object at the head if empty */
     } else {
 	last_object = *list_heads;	/* if not empty go to next data */
@@ -84,7 +84,7 @@ static void add_to_list(AI_object ** list_heads, uint16_t number)
     pthread_cond_signal(&list_data_ready);	/* for list flush operation only */
 }
 
-/*4. For the BACnet Client side: Take data from the top of the list*/
+/*4. BACnet Client side: Take data from the top of the list*/
 
 static AI_object *list_get_first(AI_object ** list_heads)
 {
@@ -114,7 +114,7 @@ static int Update_Analog_Input_Read_Property(BACNET_READ_PROPERTY_DATA
     first_object = list_get_first(&list_heads[instance]);
     printf("AI_Present_Value request for instance %i\n", instance);
 
-    /* need  a current value object to push through to client */
+    	/* need  a current value object to push through to client */
     bacnet_Analog_Input_Present_Value_Set(instance, first_object->number);
     free(first_object);		/* get ready for next data */
     pthread_mutex_unlock(&list_lock);
@@ -137,11 +137,11 @@ static bacnet_object_functions_t server_objects[] = {
      bacnet_Device_Write_Property_Local,
      bacnet_Device_Property_Lists,
      bacnet_DeviceGetRRInfo,
-     NULL,			/* Iterator */
-     NULL,			/* Value_Lists */
-     NULL,			/* COV */
-     NULL,			/* COV Clear */
-     NULL /* Intrinsic Reporting */ },
+     NULL,	/* Iterator */
+     NULL,	/* Value_Lists */
+     NULL,	/* COV */
+     NULL,	/* COV Clear */
+     NULL 	/* Intrinsic Reporting */ },
     {bacnet_OBJECT_ANALOG_INPUT,
      bacnet_Analog_Input_Init,
      bacnet_Analog_Input_Count,
@@ -151,8 +151,8 @@ static bacnet_object_functions_t server_objects[] = {
      Update_Analog_Input_Read_Property,
      bacnet_Analog_Input_Write_Property,
      bacnet_Analog_Input_Property_Lists,
-     NULL /* ReadRangeInfo */ ,
-     NULL /* Iterator */ ,
+     NULL 	/* ReadRangeInfo */ ,
+     NULL 	/* Iterator */ ,
      bacnet_Analog_Input_Encode_Value_List,
      bacnet_Analog_Input_Change_Of_Value,
      bacnet_Analog_Input_Change_Of_Value_Clear,
@@ -165,7 +165,7 @@ static bacnet_object_functions_t server_objects[] = {
 static void register_with_bbmd(void)
 {
 #if RUN_AS_BBMD_CLIENT
-    /* Thread safety: Shares data with datalink_send_pdu */
+		/* Thread safety: Shares data with datalink_send_pdu */
     bacnet_bvlc_register_with_bbmd(bacnet_bip_getaddrbyname
 				   (BACNET_BBMD_ADDRESS),
 				   htons(BACNET_BBMD_PORT),
@@ -203,7 +203,7 @@ static void *second_tick(void *arg)
 		/* Invalidates stale BBMD foreign device table entries */
 	bacnet_bvlc_maintenance_timer(1);
 		/* Transaction state machine: Responsible for retransmissions 
-	 	* and ack checking for confirmed services */
+	 	 * and ack checking for confirmed services */
 	bacnet_tsm_timer_milliseconds(1000);
 		/*removed more bacnet functions not used here */
 		/* Sleep for 1 second */

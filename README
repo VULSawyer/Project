@@ -1,2 +1,7 @@
 This is a version of bacnet_server to access the remote modbus server at 140.159.153.159
 It has been renamed EES4100_Bridge
+
+The program was modified to have the threads move input data from the Modbus side to the Bacnet side.
+Tested and working.
+
+Additional cleaning up of indents and comments
